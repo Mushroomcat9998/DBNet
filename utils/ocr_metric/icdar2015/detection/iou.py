@@ -7,15 +7,22 @@ import cv2
 
 
 def iou_rotate(box_a, box_b, method='union'):
-    rect_a = cv2.minAreaRect(box_a)
-    rect_b = cv2.minAreaRect(box_b)
-    r1 = cv2.rotatedRectangleIntersection(rect_a, rect_b)
-    if r1[0] == 0:
+#     rect_a = cv2.minAreaRect(box_a)
+#     rect_b = cv2.minAreaRect(box_b)
+#     r1 = cv2.rotatedRectangleIntersection(rect_a, rect_b)
+    rect_a = Polygon(box_a)
+    rect_b = Polygon(box_b)
+    
+#     if r1[0] == 0:
+    if not rect_a.intersects(rect_b):
         return 0
     else:
-        inter_area = cv2.contourArea(r1[1])
-        area_a = cv2.contourArea(box_a)
-        area_b = cv2.contourArea(box_b)
+#         inter_area = cv2.contourArea(r1[1])
+#         area_a = cv2.contourArea(box_a)
+#         area_b = cv2.contourArea(box_b)
+        inter_area = rect_a.intersection(rect_b).area
+        area_a = rect_a.area
+        area_b = rect_b.area
         union_area = area_a + area_b - inter_area
         if union_area == 0 or inter_area == 0:
             return 0
