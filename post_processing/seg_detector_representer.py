@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import pyclipper
+from utils.util import mep
 from shapely.geometry import Polygon
 
 
@@ -42,7 +43,36 @@ class SegDetectorRepresenter():
 
     def binarize(self, pred):
         return pred > self.thresh
+    
+    def crop_min_parallelogram(self, contour, bitmap):
+        if len(contour) < 4:
+            return None
+        box = self.unclip(contour.reshape(-1, 2), unclip_ratio=self.unclip_ratio).reshape((-1, 1, 2))
 
+        if not cv2.isContourConvex(box):
+            box = cv2.convexHull(box)
+
+        bitmap = cv2.cvtColor(bitmap, cv2.COLOR_GRAY2BGR)
+        area, v1, v2, v3, v4, _, _ = mep(box.reshape(-1, 2), bitmap)
+
+        points = sorted([v1, v2, v3, v4], key=lambda x: x[0])
+
+        if points[1][1] > points[0][1]:
+            index_1 = 0
+            index_4 = 1
+        else:
+            index_1 = 1
+            index_4 = 0
+        if points[3][1] > points[2][1]:
+            index_2 = 2
+            index_3 = 3
+        else:
+            index_2 = 3
+            index_3 = 2
+
+        box = [points[index_1], points[index_2], points[index_3], points[index_4]]
+        return box
+    
     def polygons_from_bitmap(self, pred, _bitmap, dest_width, dest_height):
         '''
         _bitmap: single map with shape (H, W),
@@ -112,22 +142,21 @@ class SegDetectorRepresenter():
             points, sside = self.get_mini_boxes(contour)
             if sside < self.min_size:
                 continue
-            points = np.array(points)
             score = self.box_score_fast(pred, contour)
             if self.box_thresh > score:
                 continue
 
-            box = self.unclip(points, unclip_ratio=self.unclip_ratio).reshape(-1, 1, 2)
-            box, sside = self.get_mini_boxes(box)
-            if sside < self.min_size + 2:
+            box = self.crop_min_parallelogram(contour, bitmap)
+            if box is None:
                 continue
             box = np.array(box)
             if not isinstance(dest_width, int):
                 dest_width = dest_width.item()
                 dest_height = dest_height.item()
-
-            box[:, 0] = np.clip(np.round(box[:, 0] / width * dest_width), 0, dest_width)
-            box[:, 1] = np.clip(np.round(box[:, 1] / height * dest_height), 0, dest_height)
+#             box[:, 0] = np.clip(np.round(box[:, 0] / width * dest_width), 0, dest_width)
+#             box[:, 1] = np.clip(np.round(box[:, 1] / height * dest_height), 0, dest_height)
+            box[:, 0] = np.round(box[:, 0] / width * dest_width)
+            box[:, 1] = np.round(box[:, 1] / height * dest_height)
             boxes[index, :, :] = box.astype(np.int16)
             scores[index] = score
         return boxes, scores
