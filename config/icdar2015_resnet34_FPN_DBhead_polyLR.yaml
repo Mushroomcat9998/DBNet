@@ -52,7 +52,7 @@ dataset:
     dataset:
       args:
         data_path:
-          - /data/cv/ocr/10k_dataset_new/4k_fit_train.txt
+          - /data/cv/ocr/10k_dataset_new/train.txt
         img_mode: RGB
     loader:
       batch_size: 4
