@@ -49,8 +49,8 @@ class SegDetectorRepresenter():
             return None
         box = self.unclip(contour.reshape(-1, 2), unclip_ratio=self.unclip_ratio).reshape((-1, 1, 2))
 
-        if not cv2.isContourConvex(box):
-            box = cv2.convexHull(box)
+        if not cv2.isContourConvex(np.array(box)):
+            box = cv2.convexHull(np.array(box))
 
         bitmap = cv2.cvtColor(bitmap, cv2.COLOR_GRAY2BGR)
         area, v1, v2, v3, v4, _, _ = mep(box.reshape(-1, 2), bitmap)
