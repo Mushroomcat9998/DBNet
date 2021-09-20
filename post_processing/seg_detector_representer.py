@@ -147,9 +147,17 @@ class SegDetectorRepresenter():
             if self.box_thresh > score:
                 continue
 
-            box = self.crop_min_parallelogram(contour, bitmap)
-            if box is None:
+            # parallelogram bounding box
+            # box = self.crop_min_parallelogram(contour, bitmap)
+            # if box is None:
+            #     continue
+
+            # rectangle bounding box
+            box = self.unclip(points, unclip_ratio=self.unclip_ratio).reshape(-1, 1, 2)
+            box, sside = self.get_mini_boxes(box)
+            if sside < self.min_size + 2:
                 continue
+
             box = np.array(box)
             if not isinstance(dest_width, int):
                 dest_width = dest_width.item()
@@ -166,10 +174,11 @@ class SegDetectorRepresenter():
         poly = Polygon(box)
         distance = poly.area * unclip_ratio / poly.length
         offset = pyclipper.PyclipperOffset()
-        offset.AddPath(box, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
+        offset.AddPath(box, pyclipper.JT_MITER, pyclipper.ET_CLOSEDPOLYGON)
         expanded = np.array(offset.Execute(distance))
         return expanded
 
+    @staticmethod
     def get_mini_boxes(self, contour):
         bounding_box = cv2.minAreaRect(contour)
         points = sorted(list(cv2.boxPoints(bounding_box)), key=lambda x: x[0])
@@ -191,7 +200,8 @@ class SegDetectorRepresenter():
         box = [points[index_1], points[index_2], points[index_3], points[index_4]]
         return box, min(bounding_box[1])
 
-    def box_score_fast(self, bitmap, _box):
+    @staticmethod
+    def box_score_fast(bitmap, _box):
         h, w = bitmap.shape[:2]
         box = _box.copy()
         xmin = np.clip(np.floor(box[:, 0].min()).astype(np.int), 0, w - 1)
