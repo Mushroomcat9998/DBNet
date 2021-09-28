@@ -1,17 +1,19 @@
-import sys
-import pathlib
 import io
 import os
+import sys
 import cv2
 import time
 import torch
+import pathlib
 import imutils
 import onnxruntime
 import numpy as np
 from PIL import Image
-from rembg.bg import remove
 import matplotlib.pyplot as plt
-from imutils import perspective
+from utils.crop_util import predict, load_model
+
+import warnings
+warnings.filterwarnings('ignore')
 
 __dir__ = pathlib.Path(os.path.abspath(__file__))
 sys.path.append(str(__dir__))
@@ -81,43 +83,41 @@ def four_point_transform(image, pts):
     return warped
 
 
-def cropping(path, height=400.0):
-    r = lambda i: i.buffer.read() if hasattr(i, "buffer") else i.read()
-    with open(path, 'rb') as inputs:
-        img = r(inputs)
+class Cropper:
+    def __init__(self, model_path):
+        assert os.path.exists(model_path)
+        self.model = load_model(model_path)
+
+    def infer(self, img_path, height=400.0):
+        orig = cv2.imread(img_path)
+
         start = time.time()
-        rs = remove(img)
+        mask = predict(self.model, orig).convert("L")
         print('Cropping time:', time.time() - start)
-    output = Image.open(io.BytesIO(rs)).convert("RGBA")
-    img = np.array(output)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    orig = img.copy()
 
-    ratio = img.shape[0] / height
+        mask = mask.resize(tuple(reversed(orig.shape[:2])), Image.LANCZOS)
+        gray = np.array(mask)
+        ratio = orig.shape[0] / height
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img = imutils.resize(gray, height=int(height))
-    _, threshold = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY)
-    blur = cv2.medianBlur(threshold, 15)
+        img = imutils.resize(gray, height=int(height))
+        _, threshold = cv2.threshold(img, 125, 255, cv2.THRESH_BINARY)
+        cnts, _ = cv2.findContours(threshold, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cnts = sorted(cnts, key=cv2.contourArea, reverse=True)
 
-    cnts, _ = cv2.findContours(blur, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cnts = sorted(cnts, key=cv2.contourArea, reverse=True)
+        outline = None
+        for c in cnts:
+            perimeter = cv2.arcLength(c, True)
+            polygon = cv2.approxPolyDP(c, 0.02 * perimeter, True)
 
-    outline = None
+            if len(polygon) == 4:
+                outline = polygon.reshape(4, 2).astype(int)
 
-    for c in cnts:
-        perimeter = cv2.arcLength(c, True)
-        polygon = cv2.approxPolyDP(c, 0.02 * perimeter, True)
+        if outline is None:
+            result = orig
+        else:
+            result = four_point_transform(orig, outline * ratio)
 
-        if len(polygon) == 4:
-            outline = polygon.reshape(4, 2)
-
-    if outline is None:
-        result = orig
-    else:
-        result = perspective.four_point_transform(orig, outline * ratio)
-
-    return result
+        return result
 
 
 class ONNXDetector:
@@ -133,7 +133,7 @@ class ONNXDetector:
         self.model = ort_session
         config = {'type': 'SegDetectorRepresenter',
                   'args': {'thresh': 0.3, 'box_thresh': 0.7, 'max_candidates': 1000,
-                           'unclip_ratio': 2}}
+                           'unclip_ratio': 2.5}}
         self.post_process = get_post_processing(config)
         self.post_process.box_thresh = post_p_thre
 
@@ -157,23 +157,30 @@ class ONNXDetector:
         return boxes_list, score_list
 
     @staticmethod
-    def show(input_img, boxes_list):
+    def show(input_img, boxes_list, height=800):
         from utils.util import draw_bbox
         img = draw_bbox(input_img[:, :, ::-1], boxes_list)
-        plt.figure(figsize=(8, 6), dpi=150)
-        plt.imshow(img)
+        img_show = imutils.resize(img, height=height)
+
+        cv2.imshow('Img', img_show)
+        cv2.waitKey(0)
+        # plt.figure(figsize=(8, 6), dpi=150)
+        # plt.imshow(img)
 
 
 if __name__ == '__main__':
-    onnx_path = 'detector.onnx'
-    img_path = 'imgs/8Tq0Q.jpg'
+    onnx_path = 'D:/OCR/Localization/text_localization/models/detector.onnx'  # path to detection model
+    cropper_path = 'C:/Users/ADMIN/Desktop/u2net.pth'  # path to cropping model
+    img_path = 'D:/OCR/real_img/Images/IMG_20210927_092834.jpg'  # path to receipt image
 
     onnx_detector = ONNXDetector(onnx_path, post_p_thre=0.7, gpu_id=0)
-    IMG = cropping(img_path)
+    cropper = Cropper(cropper_path)
+
+    IMG = cropper.infer(img_path)
 
     start = time.time()
     boxes_LST, score_LST = onnx_detector.infer(IMG)
-    print('Infer time:', time.time() - start)
+    print('Detecting time:', time.time() - start)
 
     # Show the result
     onnx_detector.show(IMG, boxes_LST)

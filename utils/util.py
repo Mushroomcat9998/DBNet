@@ -119,7 +119,7 @@ def draw_bbox(img_path, result, color=(255, 0, 0), thickness=2):
     img_path = img_path.copy()
     for point in result:
         point = point.astype(int)
-        cv2.polylines(img_path, [point], True, color, thickness)
+        cv2.polylines(img_path, [point], True, color, thickness, lineType=cv2.LINE_AA)
     return img_path
 
 
@@ -314,9 +314,3 @@ def mep(convex_polygon, img_ori):
             so, ao, bo, co, do, z1o, z2o = st, at, bt, ct, dt, z1, z2
 
     return so, ao, bo, co, do, z1o, z2o
-
-
-if __name__ == '__main__':
-    img = np.zeros((1, 3, 640, 640))
-    show_img(img[0][0])
-    plt.show()

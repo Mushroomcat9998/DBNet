@@ -153,7 +153,7 @@ class SegDetectorRepresenter():
             #     continue
 
             # rectangle bounding box
-            box = self.unclip(points, unclip_ratio=self.unclip_ratio).reshape(-1, 1, 2)
+            box = self.unclip(points, unclip_ratio=self.unclip_ratio).reshape((-1, 1, 2))
             box, sside = self.get_mini_boxes(box)
             if sside < self.min_size + 2:
                 continue
@@ -162,8 +162,8 @@ class SegDetectorRepresenter():
             if not isinstance(dest_width, int):
                 dest_width = dest_width.item()
                 dest_height = dest_height.item()
-#             box[:, 0] = np.clip(np.round(box[:, 0] / width * dest_width), 0, dest_width)
-#             box[:, 1] = np.clip(np.round(box[:, 1] / height * dest_height), 0, dest_height)
+            # box[:, 0] = np.clip(np.round(box[:, 0] / width * dest_width), 0, dest_width)
+            # box[:, 1] = np.clip(np.round(box[:, 1] / height * dest_height), 0, dest_height)
             box[:, 0] = np.round(box[:, 0] / width * dest_width)
             box[:, 1] = np.round(box[:, 1] / height * dest_height)
             boxes[index, :, :] = box.astype(np.int16)
@@ -179,11 +179,10 @@ class SegDetectorRepresenter():
         return expanded
 
     @staticmethod
-    def get_mini_boxes(self, contour):
+    def get_mini_boxes(contour):
         bounding_box = cv2.minAreaRect(contour)
         points = sorted(list(cv2.boxPoints(bounding_box)), key=lambda x: x[0])
 
-        index_1, index_2, index_3, index_4 = 0, 1, 2, 3
         if points[1][1] > points[0][1]:
             index_1 = 0
             index_4 = 1
