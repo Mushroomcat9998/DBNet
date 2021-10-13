@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
 # @Time    : 2019/8/23 21:59
 # @Author  : zhoujun
+import os
+import cv2
 import json
 import math
 import pathlib
 import time
-import os
 import glob
-from natsort import natsorted
-import cv2
-import matplotlib.pyplot as plt
+import torch
+import onnxruntime
 import numpy as np
+from natsort import natsorted
+import matplotlib.pyplot as plt
+
+from models import Model
 
 
 def get_file_list(folder_path: str, p_postfix: list = None, sub_dir: bool = True) -> list:
@@ -112,15 +116,22 @@ def show_img(imgs: np.ndarray, title='img'):
     plt.show()
 
 
-def draw_bbox(img_path, result, color=(255, 0, 0), thickness=2):
-    if isinstance(img_path, str):
-        img_path = cv2.imread(img_path)
-        # img_path = cv2.cvtColor(img_path, cv2.COLOR_BGR2RGB)
-    img_path = img_path.copy()
-    for point in result:
-        point = point.astype(int)
-        cv2.polylines(img_path, [point], True, color, thickness, lineType=cv2.LINE_AA)
-    return img_path
+def draw_bbox(img, result, color=(255, 0, 0), thickness=2, is_sorted=False):
+    if isinstance(img, str):
+        img = cv2.imread(img)
+    img = img.copy()
+    if len(result) == 0:
+        return img
+    result = list(reversed(result))
+    result = sort_bbox(result)
+    for i, points in enumerate(result):
+        points = points.astype(int)
+        cv2.polylines(img, [points], True, color, thickness, lineType=cv2.LINE_AA)
+        if is_sorted:
+            cv2.putText(img, str(i), tuple(points[0]),
+                        cv2.FONT_HERSHEY_SIMPLEX, 3,
+                        color, thickness, lineType=cv2.LINE_AA)
+    return img
 
 
 def cal_text_score(texts, gt_texts, training_masks, running_metric_text, thred=0.5):
@@ -314,3 +325,131 @@ def mep(convex_polygon, img_ori):
             so, ao, bo, co, do, z1o, z2o = st, at, bt, ct, dt, z1, z2
 
     return so, ao, bo, co, do, z1o, z2o
+
+
+def detect_pre_process(img_ori, short_size):
+    img = cv2.cvtColor(img_ori, cv2.COLOR_BGR2RGB)
+    img_resize = resize_image(img, short_size)
+
+    img = img_resize.astype(np.float32) / 255
+    img -= [0.485, 0.456, 0.406]
+    img /= [0.229, 0.224, 0.225]
+    img = np.transpose(img, (2, 0, 1))
+    return np.expand_dims(img.astype(np.float32), 0)
+
+
+def resize_image(img, short_size):
+    height, width, _ = img.shape
+    if height < width:
+        new_height = short_size
+        new_width = new_height / height * width
+    else:
+        new_width = short_size
+        new_height = new_width / width * height
+    new_height = int(round(new_height / 32) * 32)
+    new_width = int(round(new_width / 32) * 32)
+    resized_img = cv2.resize(img, (new_width, new_height))
+    return resized_img
+
+
+def load_detector(path, device, mode='torch'):
+    net, post_process_config = None, None
+    if mode == 'torch':
+        checkpoint = torch.load(path, map_location=device)
+        config = checkpoint['config']
+        net = Model(config['arch']).to(device)
+        net.load_state_dict(checkpoint['state_dict'])
+        net.to(device)
+        net.eval()
+        post_process_config = config['post_processing']
+    elif mode == 'onnx':
+        post_process_config = {'type': 'SegDetectorRepresenter',
+                               'args': {'thresh': 0.3, 'box_thresh': 0.7, 'max_candidates': 1000,
+                                        'unclip_ratio': 2.5}}
+        net = onnxruntime.InferenceSession(path)
+
+    return net, post_process_config
+
+
+def detect(net, item, short_size, device, post_processor, mode='onnx'):
+    h, w = item.shape[:2]
+    batch = {'shape': [(h, w)]}
+    input_predict = detect_pre_process(item, short_size)
+
+    tensor_out = None
+    if mode == 'torch':
+        input_predict = torch.Tensor(input_predict).to(device)
+        if device == 'cuda':
+            torch.cuda.synchronize(device)
+
+        tensor_out = net(input_predict)
+
+        if device == 'cuda':
+            torch.cuda.synchronize(device)
+    elif mode == 'onnx':
+        ort_inputs = {net.get_inputs()[0].name: input_predict}
+        ort_outs = net.run(None, ort_inputs)[0]
+        tensor_out = torch.from_numpy(ort_outs)
+
+    boxes_list, score_list = post_processor(batch, tensor_out)
+    boxes_list, score_list = boxes_list[0], score_list[0]
+    if len(boxes_list) > 0:
+        idx = boxes_list.reshape(boxes_list.shape[0], -1).sum(axis=1) > 0
+        boxes_list, score_list = boxes_list[idx], score_list[idx]
+    else:
+        boxes_list, score_list = [], []
+
+    return boxes_list, score_list
+
+
+def save_image(folder_path, file_name, image):
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    save_path = os.path.join(folder_path, file_name)
+    cv2.imwrite(save_path, image)
+
+
+def on_one_line(box1, box2):
+    off_h = min(box1[3][1] - box1[0][1], box2[3][1] - box2[0][1]) * 0.45  # 0.43 --> 0.47
+    if np.abs(box1[0][1] - box2[0][1]) < off_h:
+        return True
+    return False
+
+
+def sort_bbox(box_lst):
+    result_dict = {0: [0]}
+    line = 0
+    for i, box in enumerate(box_lst[1:]):
+        if on_one_line(box, box_lst[i]):
+            result_dict[line].append(i + 1)
+        else:
+            line += 1
+            result_dict[line] = [i + 1]
+
+    result_lst = []
+    for k, v in result_dict.items():
+        if len(v) == 1:
+            result_lst.append(box_lst[v[0]])
+        else:
+            line = sorted(box_lst[v[0]:v[-1] + 1], key=lambda x: x[0][0])
+            result_lst.extend(line)
+
+    return result_lst
+
+
+def intersection_of_2lines(line1, line2):
+    a1 = line1[0] - line1[2]
+    b1 = line1[1] - line1[3]
+    a2 = line2[0] - line2[2]
+    b2 = line2[1] - line2[3]
+    factor_matrix = [[b1, b2],
+                     [-a1, -a2],
+                     [b1 * line1[0] - a1 * line1[1], b2 * line2[0] - a2 * line2[1]]]
+
+    D = np.linalg.det(factor_matrix[:2])
+    Dx = np.linalg.det([factor_matrix[2], factor_matrix[0]])
+    Dy = np.linalg.det([factor_matrix[1], factor_matrix[2]])
+    x = Dx / D
+    y = Dy / D
+
+    return int(-y), int(-x)

@@ -15,5 +15,4 @@ torch==1.4
 torchvision==0.5
 onnxruntime==1.6.0
 imutils==0.5.3
-rembg
 numpy

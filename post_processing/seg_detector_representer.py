@@ -14,7 +14,7 @@ class SegDetectorRepresenter():
         self.unclip_ratio = unclip_ratio
 
     def __call__(self, batch, pred, is_output_polygon=False):
-        '''
+        """
         batch: (image, polygons, ignore_tags
         batch: a dict produced by dataloaders.
             image: tensor of shape (N, C, H, W).
@@ -25,8 +25,8 @@ class SegDetectorRepresenter():
         pred:
             binary: text region segmentation map, with shape (N, H, W)
             thresh: [if exists] thresh hold prediction with shape (N, H, W)
-            thresh_binary: [if exists] binarized with threshhold, (N, H, W)
-        '''
+            thresh_binary: [if exists] binarized with threshold, (N, H, W)
+        """
         pred = pred[:, 0, :, :]
         segmentation = self.binarize(pred)
         boxes_batch = []
@@ -74,10 +74,10 @@ class SegDetectorRepresenter():
         return box
     
     def polygons_from_bitmap(self, pred, _bitmap, dest_width, dest_height):
-        '''
+        """
         _bitmap: single map with shape (H, W),
             whose values are binarized as {0, 1}
-        '''
+        """
 
         assert len(_bitmap.shape) == 2
         bitmap = _bitmap.cpu().numpy()  # The first channel
@@ -123,10 +123,10 @@ class SegDetectorRepresenter():
         return boxes, scores
 
     def boxes_from_bitmap(self, pred, _bitmap, dest_width, dest_height):
-        '''
+        """
         _bitmap: single map with shape (H, W),
             whose values are binarized as {0, 1}
-        '''
+        """
 
         assert len(_bitmap.shape) == 2
         bitmap = _bitmap.cpu().numpy()  # The first channel
@@ -170,7 +170,8 @@ class SegDetectorRepresenter():
             scores[index] = score
         return boxes, scores
 
-    def unclip(self, box, unclip_ratio=1.5):
+    @staticmethod
+    def unclip(box, unclip_ratio=1.5):
         poly = Polygon(box)
         distance = poly.area * unclip_ratio / poly.length
         offset = pyclipper.PyclipperOffset()
