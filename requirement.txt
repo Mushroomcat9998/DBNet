@@ -11,8 +11,7 @@ scikit-image==0.16.2
 Shapely==1.7.1
 tensorboard==2.1.0
 tqdm==4.40.1
-torch==1.4
-torchvision==0.5
+torchvision==0.7.0
 onnxruntime==1.6.0
 imutils==0.5.3
 numpy
