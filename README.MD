@@ -1,3 +1,4 @@
+# Reference code: [WenmuZhou/DBNet.pytorch](https://github.com/WenmuZhou/DBNet.pytorch)
 # Real-time Scene Text Detection with Differentiable Binarization
 
 **note**: some code is inherited from [MhLiao/DB](https://github.com/MhLiao/DB)
